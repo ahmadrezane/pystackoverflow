@@ -3,7 +3,8 @@ from loguru import logger
 from telebot import custom_filters
 
 from src.bot import bot
-from src.constants import keyboards, keys
+from src.constants import keyboards, keys, states
+from src.db import db
 from src.filters import IsAdmin
 
 
@@ -11,9 +12,9 @@ class Bot:
     """
     Template for telegram bot.
     """
-    def __init__(self, telebot):
+    def __init__(self, telebot, mongodb):
         self.bot = telebot
-
+        self.db = mongodb
         # add custom filters
         self.bot.add_custom_filter(IsAdmin())
         self.bot.add_custom_filter(custom_filters.TextMatchFilter())
@@ -27,6 +28,22 @@ class Bot:
         self.bot.infinity_polling()
 
     def handlers(self):
+        @self.bot.message_handler(commands=['start'])
+        def start(message):
+            self.bot.send_message(
+                message.chat.id,
+                f'Hi <strong>{message.chat.first_name}</strong>',
+                reply_markup=keyboards.main
+            )
+
+            self.db.users.update_one(
+                {'chat_id': message.chat.id},
+                {'$set': message.json},
+                upsert=True
+            )
+
+            self.update_state(message.chat.id, states.main)
+
         @self.bot.message_handler(text=[keys.exit])
         def exit(message):
             pass
@@ -37,7 +54,10 @@ class Bot:
 
         @self.bot.message_handler(is_admin=True)
         def admin_of_group(message):
-            self.send_message(message.chat.id, '<strong>You are admin of this group!</strong>')
+            self.send_message(
+                message.chat.id,
+                '<strong>You are admin of this group!</strong>'
+            )
 
         @self.bot.message_handler(func=lambda ـ: True)
         def echo(message):
@@ -55,8 +75,14 @@ class Bot:
 
         self.bot.send_message(chat_id, text, reply_markup=reply_markup)
 
+    def update_state(self, chat_id, state):
+        self.db.users.upate_one(
+            {'chat_id': chat_id},
+            {'$set': {'state': state}}
+        )
+
 
 if __name__ == '__main__':
     logger.info('Bot started')
-    nashenas_bot = Bot(telebot=bot)
+    nashenas_bot = Bot(telebot=bot, mongodb=db)
     nashenas_bot.run()
